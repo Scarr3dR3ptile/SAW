@@ -1,0 +1,8 @@
+{
+  "name": "scre-steam-artwork-editor",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SCRE — редактор фонов профиля Steam. Клиент (index.html) + 2 serverless-функции для Steam (CORS-прокси и OpenID-вход). Деплой на Vercel.",
+  "engines": { "node": ">=18" }
+}

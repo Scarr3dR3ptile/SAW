@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SCRE · Steam Artwork Editor</title>
+<link rel="stylesheet" href="https://community.fastly.steamstatic.com/public/shared/css/motiva_sans.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="/ffmpeg/ffmpeg.js"></script>
+<style>
+:root{--bg:#0f0f14;--panel:#16161c;--border:#2a2a33;--text:#e6e6ee;--muted:#9aa;--accent:#66c0f4;--ok:#7fd;--err:#f88}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Motiva Sans","Segoe UI",sans-serif;font-size:14px}
+h3{margin:16px 0 8px;color:#c7d5e0;font-size:15px}
+.btn{background:#2a2a3a;border:1px solid #3a3a4a;border-radius:6px;color:var(--text);padding:8px 12px;cursor:pointer}
+.btn:hover{background:#34344a}.btn.primary{background:#3a5a3a;border-color:#4a7a4a}.btn.ghost{background:transparent}.btn:disabled{opacity:.5;cursor:default}
+input[type=text],input[type=number],select,input[type=file]{background:#16161c;border:1px solid var(--border);border-radius:5px;color:var(--text);padding:6px}
+.row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
+label{display:block;margin:6px 0}.hint,.filemeta,.status{color:var(--muted);font-size:13px}.status{margin-left:8px}
+.topbar{display:flex;align-items:center;gap:20px;padding:10px 18px;background:#12121a;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.brand{font-weight:700}.brand span{color:var(--accent)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tab{background:transparent;border:none;color:var(--muted);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:14px}
+.tab.active{background:#2a2a3a;color:var(--text)}
+.account{margin-left:auto;display:flex;align-items:center;gap:10px}#accountName{color:var(--ok)}
+main{padding:16px 18px}.panel{display:none}.panel.active{display:block}
+.profile-toolbar{display:flex;gap:16px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.stage-wrap{width:100%;background:#000;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.profile-stage{position:relative;width:1920px;transform-origin:top left;background:#000;color:#c6d4df;font-family:"Motiva Sans",sans-serif}
+#chromeFrame{width:100%;height:1500px;border:0;background:#1b2838;display:block}
+.ps-bg{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0}
+.ps-tint{position:absolute;inset:0;background:rgba(8,12,18,.28);z-index:1}
+.ps-avatar{position:absolute;border:3px solid #3a4a5a;border-radius:3px;overflow:hidden;background:#16202d;z-index:2}
+.ps-avatar img{width:100%;height:100%;display:block}
+.ps-nick{position:absolute;font-size:34px;font-weight:200;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.7);z-index:2}
+.ps-state{position:absolute;font-size:20px;color:var(--accent);z-index:2}
+.ps-level{position:absolute;border:3px solid var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;background:rgba(0,0,0,.35);z-index:2}
+.ps-title{position:absolute;background:rgba(0,0,0,.55);border-radius:3px;display:flex;align-items:center;padding-left:14px;font-size:20px;color:#dfe7ee;z-index:2}
+.ps-gap{position:absolute;background:rgba(0,0,0,.55);z-index:4}
+.ps-piece{position:absolute;z-index:3;overflow:hidden}
+.ps-piece img,.ps-piece video{width:100%;height:100%;object-fit:cover}
+.ps-outline{position:absolute;z-index:2;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
+.ps-rpanel{position:absolute;background:rgba(0,0,0,.45);border-radius:4px;z-index:2}
+.ps-rline{position:absolute;background:rgba(120,135,150,.5);border-radius:3px;z-index:2}
+.slice-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:900px}
+fieldset{border:1px solid var(--border);border-radius:6px;margin:8px 0}legend{color:var(--muted)}
+.catalog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin:12px 0}
+.cat-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;cursor:pointer}
+.cat-card:hover{border-color:var(--accent)}.cat-card img{width:100%;height:112px;object-fit:cover;display:block;background:#000}
+.cat-card .cap{padding:8px;font-size:13px}.cat-card .cost{color:var(--accent)}
+.guide{background:#14141a;border:1px solid var(--border);border-radius:8px;padding:16px;max-width:800px;line-height:1.5}
+.guide code{background:#22222c;padding:2px 6px;border-radius:4px;color:#9fe}.guide h4{color:var(--accent)}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">SCRE · <span>Steam Artwork Editor</span></div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="profile">👤 Профиль</button>
+    <button class="tab" data-tab="slice">✂️ Нарезка</button>
+    <button class="tab" data-tab="fit">⚙️ GIF-подгонка</button>
+    <button class="tab" data-tab="catalog">🗂 Каталог</button>
+    <button class="tab" data-tab="upload">📤 Загрузка</button>
+  </nav>
+  <div class="account"><span id="accountName"></span><button id="loginBtn" class="btn">🔓 Войти через Steam</button></div>
+</header>
+<main>
+  <section class="panel active" data-panel="profile">
+    <div class="profile-toolbar">
+      <label><input type="checkbox" id="realChrome"> 1:1 хром Steam (настоящая страница)</label>
+      <label><input type="checkbox" id="showPieces" checked> Показывать куски</label>
+      <span class="hint" id="profileHint">Загрузите фон во вкладке «Нарезка» или войдите через Steam.</span>
+    </div>
+    <div class="stage-wrap">
+      <div class="profile-stage" id="stage"></div>
+      <iframe id="chromeFrame" title="Steam profile" style="display:none"></iframe>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="slice">
+    <div class="slice-grid">
+      <div class="col">
+        <h3>Фон профиля</h3>
+        <input type="file" id="bgFile" accept="image/*,.gif,.webm,.mp4">
+        <div class="row"><input type="text" id="linkInput" placeholder="Ссылка: Площадка или Магазин очков"><button class="btn" id="linkBtn">Загрузить</button></div>
+        <button class="btn ghost" id="useMyBg" style="display:none">Взять мой текущий фон</button>
+        <div class="filemeta" id="bgMeta">Фон не выбран</div>
+        <h3>Витрина</h3>
+        <label><input type="radio" name="mode" value="pieces" checked> Витрина иллюстраций (большой + маленький)</label>
+        <label><input type="radio" name="mode" value="featured"> Витрина избранных (630px)</label>
+        <h3>Иллюстрация</h3>
+        <label><input type="radio" name="source" value="bg" checked> Из фона (бесшовно)</label>
+        <label><input type="radio" name="source" value="custom"> Своя картинка / GIF</label>
+        <input type="file" id="artFile" accept="image/*,.gif,.webm,.mp4" disabled>
+      </div>
+      <div class="col">
+        <h3>Параметры</h3>
+        <label>Рендер фона: <select id="render"><option value="auto">Авто</option><option value="static">Статичный</option><option value="animated">Анимированный (1920)</option></select></label>
+        <label>Верх витрины: <input type="range" id="artY" min="0" max="1200" value="286"><span id="artYv">286</span></label>
+        <label>Зазор: <input type="range" id="gap" min="0" max="30" value="9"><span id="gapv">9</span></label>
+        <label><input type="checkbox" id="autoH" checked> Высота: до низа фона</label>
+        <label>Высота: <input type="range" id="height" min="100" max="2000" value="794" disabled><span id="heightv">794</span></label>
+        <label>Масштаб: <select id="scale"><option value="1">1x</option><option value="2">2x</option></select></label>
+        <fieldset id="fitBox" disabled><legend>Кадр своей иллюстрации</legend>
+          <label>↔ <input type="range" id="offx" min="0" max="100" value="50"></label>
+          <label>↕ <input type="range" id="offy" min="0" max="100" value="50"></label>
+          <label>Зум <input type="range" id="zoom" min="100" max="300" value="100"></label>
+        </fieldset>
+        <label><input type="checkbox" id="compress" checked> Сжимать анимацию под 5 МБ (fps синхронно)</label>
+        <button class="btn primary" id="exportBtn" disabled>💾 Скачать ZIP</button>
+        <div class="status" id="sliceStatus"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="fit">
+    <div class="slice-grid">
+      <div class="col">
+        <h3>Готовый GIF</h3>
+        <input type="file" id="fitFile" accept=".gif">
+        <div class="filemeta" id="fitMeta">Файл не выбран</div>
+        <h3>Цель</h3>
+        <label>Ширина: <select id="fitPreset"><option value="630">Избранные (630)</option><option value="506">Большой (506)</option><option value="100">Маленький (100)</option><option value="orig">Исходная</option></select></label>
+        <label>Масштаб: <select id="fitScale"><option value="1">1x</option><option value="2">2x</option></select></label>
+        <label>Лимит: <input type="number" id="fitLimit" value="5" min="1" max="50" step="0.5"> МБ</label>
+        <button class="btn primary" id="fitBtn" disabled>⚙️ Подогнать и скачать</button>
+      </div>
+      <div class="col"><div class="status" id="fitStatus"></div><div class="filemeta" id="fitResult"></div></div>
+    </div>
+  </section>
+
+  <section class="panel" data-panel="catalog">
+    <div class="row"><input type="text" id="gameSearch" placeholder="Название игры (пусто = всё)"><button class="btn" id="gameSearchBtn">🔍 Найти</button><select id="gameSel"></select><button class="btn" id="catLoadBtn">📥 Показать</button></div>
+    <div class="catalog-grid" id="catGrid"></div>
+    <div class="row"><button class="btn" id="catMore" disabled>⤵️ Ещё</button><span class="status" id="catStatus"></span></div>
+  </section>
+
+  <section class="panel" data-panel="upload"><div id="uploadGuide" class="guide"></div>
+    <div class="row"><button class="btn" id="openUpload">🌐 Страница загрузки Steam</button><button class="btn" id="copyScript">📋 Скопировать скрипт</button><span class="status" id="uploadStatus"></span></div>
+  </section>
+</main>
+<script>
+"use strict";
+// ── константы геометрии Steam (совпадают с ядром десктопа) ──
+const G={viewport_w:1920,content_x:484,art_x:492,art_y:286,center_w:506,side_w:100,featured_w:630,gap:9,leftcol_w:652,rightcol_x:1148,rightcol_w:288,max_bytes:5242880};
+const SAFE=Math.floor(G.max_bytes*0.97);
+const UPLOAD_URL="https://steamcommunity.com/sharedfiles/edititem/767/3/";
+const CONSOLE_SCRIPT="$J('#image_width').val(1000).attr('id',''),$J('#image_height').val(1).attr('id','');";
+const BG_RE=/(has_profile_background\s*"[^>]*?style="[^"]*?background-image:\s*url\(\s*')[^']*('\s*\))/i;
+const $=(s)=>document.querySelector(s);
+const proxy=(a,q="")=>`/api/proxy?action=${a}${q}`;
+const jget=(u,o)=>fetch(u,o).then(r=>r.json());
+const animExt=(n)=>/\.(gif|webm|mp4)$/i.test(n||"");
+const isVideoName=(n)=>/\.(webm|mp4)$/i.test(n||"");
+const esc=(s)=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const evenR=(n)=>{n=Math.round(n);return n%2?n-1:n;};
+
+let account=null;
+const state={bg:null,custom:null};
+
+// ── вкладки ──
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
+  t.classList.add("active");$(`.panel[data-panel="${t.dataset.tab}"]`).classList.add("active");
+  if(t.dataset.tab==="catalog")catalogAuto();
+  if(t.dataset.tab==="profile")renderProfile();
+  if(t.dataset.tab==="upload")loadGuide();
+});
+
+// ── вход ──
+$("#loginBtn").onclick=()=>{ if(account){fetch("/api/steam-auth?action=logout",{method:"POST"}).then(()=>{account=null;accUI();renderProfile();});}else location.href="/api/steam-auth?action=login"; };
+function accUI(){ if(account){$("#accountName").textContent=`👤 ${account.nick}`+(account.level!=null?` · ур. ${account.level}`:"");$("#loginBtn").textContent="🚪 Выйти";$("#useMyBg").style.display=account.bg_url?"":"none";}else{$("#accountName").textContent="";$("#loginBtn").textContent="🔓 Войти через Steam";} }
+async function loadMe(){ const r=await jget("/api/steam-auth?action=me"); if(r.logged_in&&r.steamid){ try{account=await jget(proxy("profile",`&steamid=${r.steamid}`));accUI();renderProfile();}catch{} } }
+
+// ── источник фона ──
+async function loadBitmap(blob,animated,name){
+  if(animated&&isVideoName(name)){ const v=document.createElement("video");v.muted=true;v.src=URL.createObjectURL(blob);await v.play().catch(()=>{});await new Promise(r=>{if(v.readyState>=2)r();else v.onloadeddata=r;}); return {w:v.videoWidth,h:v.videoHeight}; }
+  const bmp=await createImageBitmap(blob); return {w:bmp.width,h:bmp.height,bmp};
+}
+async function setBg(blob,animated,name){
+  const url=URL.createObjectURL(blob); const d=await loadBitmap(blob,animated,name);
+  state.bg={url,animated,name,blob,w:d.w,h:d.h};
+  $("#bgMeta").textContent=`${name} · ${d.w}×${d.h} · ${animated?"анимация":"картинка"}`;
+  $("#exportBtn").disabled=false; autoHeight(); renderProfile();
+}
+$("#bgFile").onchange=e=>{const f=e.target.files[0];if(f)setBg(f,animExt(f.name),f.name);};
+$("#linkBtn").onclick=async()=>{
+  const url=$("#linkInput").value.trim();if(!url)return; $("#sliceStatus").textContent="⏳ Проверяю ссылку…";
+  const r=await jget(proxy("link"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
+  if(r.error){$("#sliceStatus").textContent="❌ "+r.error;return;}
+  const blob=await fetch(proxy("img",`&url=${encodeURIComponent(r.image_url)}`)).then(x=>x.blob());
+  await setBg(blob,r.animated||animExt(r.image_url),r.title); $("#sliceStatus").textContent="✅ Загружено: "+r.title;
+};
+$("#useMyBg").onclick=async()=>{ if(!account||!account.bg_url)return; const blob=await fetch(proxy("img",`&url=${encodeURIComponent(account.bg_url)}`)).then(x=>x.blob()); await setBg(blob,account.bg_animated,"Мой фон"); };
+document.querySelectorAll('input[name=source]').forEach(r=>r.onchange=()=>{const c=$('input[name=source][value=custom]').checked;$("#artFile").disabled=!c;$("#fitBox").disabled=!c;renderProfile();});
+$("#artFile").onchange=e=>{const f=e.target.files[0];if(f){state.custom={url:URL.createObjectURL(f),animated:animExt(f.name),name:f.name,blob:f};renderProfile();}};
+
+// ── параметры ──
+const bindR=(id,out)=>{const el=$("#"+id);el.oninput=()=>{if(out)$("#"+out).textContent=el.value;renderProfile();};};
+bindR("artY","artYv");bindR("gap","gapv");bindR("height","heightv");["offx","offy","zoom"].forEach(id=>bindR(id));
+$("#autoH").onchange=()=>{$("#height").disabled=$("#autoH").checked;autoHeight();renderProfile();};
+$("#render").onchange=()=>{autoHeight();renderProfile();};$("#scale").onchange=renderProfile;
+document.querySelectorAll('input[name=mode]').forEach(r=>r.onchange=()=>{autoHeight();renderProfile();});
+$("#showPieces").onchange=renderProfile;$("#realChrome").onchange=renderProfile;
+function renderAnimated(){const v=$("#render").value;if(v==="static")return false;if(v==="animated")return true;return state.bg?state.bg.animated:false;}
+function visH(){const a=renderAnimated();return a?Math.round(state.bg.h*G.viewport_w/state.bg.w):state.bg.h;}
+function autoHeight(){if(!$("#autoH").checked||!state.bg)return;const h=Math.max(50,visH()-(+$("#artY").value));$("#height").value=h;$("#heightv").textContent=h;}
+const featuredMode=()=>$('input[name=mode][value=featured]').checked;
+const fitParams=()=>({offx:+$("#offx").value/100,offy:+$("#offy").value/100,zoom:+$("#zoom").value/100});
+
+// ── геометрия нарезки ──
+function placement(w,h,animated){return animated?{scale:w/G.viewport_w,offX:0}:{scale:1,offX:(w-G.viewport_w)/2};}
+function toBg(box,p){return [Math.round(p.offX+box[0]*p.scale),Math.round(box[1]*p.scale),Math.round(p.offX+box[2]*p.scale),Math.round(box[3]*p.scale)];}
+function pieceBoxes(geom){const bigW=geom.featured?G.featured_w:G.center_w;const out={big:[G.art_x,geom.art_y,G.art_x+bigW,geom.art_y+geom.height]};if(!geom.featured){const sx=G.art_x+G.center_w+geom.gap;out.small=[sx,geom.art_y,sx+G.side_w,geom.art_y+geom.height];}return out;}
+function curGeom(){return {art_y:+$("#artY").value,height:+$("#height").value,gap:+$("#gap").value,featured:featuredMode()};}
+
+// ── нарезка СТАТИКИ (Canvas) ──
+function cropPiece(bmp,sx,sy,sw,sh,outW,outH){const c=document.createElement("canvas");c.width=outW;c.height=outH;const ctx=c.getContext("2d");ctx.fillStyle="#000";ctx.fillRect(0,0,outW,outH);const ix0=Math.max(0,sx),iy0=Math.max(0,sy),ix1=Math.min(bmp.width,sx+sw),iy1=Math.min(bmp.height,sy+sh);if(ix1>ix0&&iy1>iy0){const k=outW/sw;ctx.drawImage(bmp,ix0,iy0,ix1-ix0,iy1-iy0,(ix0-sx)*k,(iy0-sy)*k,(ix1-ix0)*k,(iy1-iy0)*k);}return c;}
+function coverCanvas(bmp,tw,th,fit){const c=document.createElement("canvas");c.width=tw;c.height=th;const ctx=c.getContext("2d");const k=Math.max(tw/bmp.width,th/bmp.height)*Math.max(1,fit.zoom);const nw=bmp.width*k,nh=bmp.height*k;ctx.drawImage(bmp,-(nw-tw)*fit.offx,-(nh-th)*fit.offy,nw,nh);return c;}
+function subCanvas(src,sx,sy,w,h){const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(src,sx,sy,w,h,0,0,w,h);return c;}
+const toBlob=(c)=>new Promise(r=>c.toBlob(r,"image/png"));
+async function sliceStatic(geom,scale){
+  const animated=renderAnimated();const s=scale;const out={};
+  if($('input[name=source][value=custom]').checked&&state.custom){
+    const bmp=await createImageBitmap(state.custom.blob);const areaW=(geom.featured?G.featured_w:G.center_w+geom.gap+G.side_w)*s;const area=coverCanvas(bmp,areaW,geom.height*s,fitParams());
+    out.big=await toBlob(subCanvas(area,0,0,(geom.featured?G.featured_w:G.center_w)*s,geom.height*s));
+    if(!geom.featured)out.small=await toBlob(subCanvas(area,(G.center_w+geom.gap)*s,0,G.side_w*s,geom.height*s));
+    return out;
+  }
+  const bmp=state.bg.bmp||await createImageBitmap(state.bg.blob);const p=placement(state.bg.w,state.bg.h,animated);const boxes=pieceBoxes(geom);
+  for(const key in boxes){const[l,t,r,b]=toBg(boxes[key],p);const outW=(key==="big"?(geom.featured?G.featured_w:G.center_w):G.side_w)*s;out[key]=await toBlob(cropPiece(bmp,l,t,r-l,b-t,outW,geom.height*s));}
+  return out;
+}
+
+// ── ffmpeg.wasm (single-thread, без COOP/COEP) для анимации ──
+let _ff=null;
+async function getFF(prog){ if(_ff)return _ff; prog&&prog("Загружаю ffmpeg.wasm (~31 МБ, один раз)…"); const {FFmpeg}=FFmpegWASM; const ff=new FFmpeg(); const o=location.origin; await ff.load({classWorkerURL:o+"/ffmpeg/814.ffmpeg.js",coreURL:o+"/ffmpeg/esm/ffmpeg-core.js",wasmURL:o+"/ffmpeg/esm/ffmpeg-core.wasm"}); _ff=ff; return ff; }
+const PAL=(c)=>`split[a][b];[a]palettegen=max_colors=${c}:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle`;
+async function ffSlice(ff,geom,scale,prog){
+  const animated=renderAnimated();const custom=$('input[name=source][value=custom]').checked&&state.custom;
+  const srcBlob=custom?state.custom.blob:state.bg.blob;const ext=isVideoName(custom?state.custom.name:state.bg.name)?(/\.mp4$/i.test(custom?state.custom.name:state.bg.name)?".mp4":".webm"):".gif";
+  await ff.writeFile("src"+ext,new Uint8Array(await srcBlob.arrayBuffer()));
+  const s=scale,out={};const info=custom?{w:(await createImageBitmap(await firstFrameBlob(ff,"src"+ext))).width,h:0}:{w:state.bg.w,h:state.bg.h};
+  // размеры источника
+  const dim=await probeDim(ff,"src"+ext);const W=dim.w,H=dim.h;
+  const boxes=pieceBoxes(geom);
+  if(custom){
+    const areaW=(geom.featured?G.featured_w:G.center_w+geom.gap+G.side_w)*s,areaH=geom.height*s,f=fitParams();
+    const k=Math.max(areaW/W,areaH/H)*Math.max(1,f.zoom);let sw=evenR(Math.max(areaW,W*k)),sh=evenR(Math.max(areaH,H*k));const ox=Math.round((sw-areaW)*f.offx),oy=Math.round((sh-areaH)*f.offy);
+    const jobs={big:[ox,oy,(geom.featured?G.featured_w:G.center_w)*s]};if(!geom.featured)jobs.small=[ox+(G.center_w+geom.gap)*s,oy,G.side_w*s];
+    for(const key in jobs){const[cx,cy,pw]=jobs[key];prog&&prog(`Нарезаю «${key}»…`);await ff.exec(["-i","src"+ext,"-filter_complex",`scale=${sw}:${sh}:flags=lanczos,crop=${evenR(pw)}:${evenR(areaH)}:${cx}:${cy},`+PAL(256),key+".gif"]);out[key]=await ff.readFile(key+".gif");}
+    return out;
+  }
+  const p=placement(W,H,animated);
+  for(const key in boxes){let[l,t,r,b]=toBg(boxes[key],p);l=Math.max(0,l);t=Math.max(0,t);r=Math.min(W,r);b=Math.min(H,b);const cw=evenR(r-l),ch=evenR(b-t),outW=(key==="big"?(geom.featured?G.featured_w:G.center_w):G.side_w)*s;prog&&prog(`Нарезаю «${key}»…`);await ff.exec(["-i","src"+ext,"-filter_complex",`crop=${cw}:${ch}:${l}:${t},scale=${outW}:-1:flags=lanczos,`+PAL(256),key+".gif"]);out[key]=await ff.readFile(key+".gif");}
+  return out;
+}
+async function firstFrameBlob(ff,name){await ff.exec(["-i",name,"-frames:v","1","ff.png"]);return new Blob([await ff.readFile("ff.png")],{type:"image/png"});}
+async function probeDim(ff,name){const b=await firstFrameBlob(ff,name);const bmp=await createImageBitmap(b);return {w:bmp.width,h:bmp.height};}
+
+// ладдер сжатия (ffmpeg-only: colors→fps→scale) + синхронизация fps
+function ladder(maxFps){const cap=maxFps||30;const keep=maxFps?Math.min(cap,maxFps):null;const st=[];
+  for(const c of [256,200,160,128,96,64])st.push({colors:c,fps:keep,mul:1});
+  for(const f of [24,20,15,12,10])st.push({colors:128,fps:Math.min(f,cap),mul:1});
+  for(const m of [0.9,0.8,0.7,0.6,0.5])st.push({colors:128,fps:Math.min(15,cap),mul:m});
+  return st;}
+async function ffEncodeStep(ff,inName,outName,baseW,step){const w=evenR(baseW*step.mul);let vf="";if(step.fps)vf+=`fps=${step.fps},`;vf+=`scale=${w}:-1:flags=lanczos,`+PAL(step.colors);await ff.exec(["-i",inName,"-filter_complex",vf,outName]);return await ff.readFile(outName);}
+async function ffCompress(ff,pieceBytes,baseW,target,maxFps,prog){
+  await ff.writeFile("c_in.gif",pieceBytes);const L=ladder(maxFps);
+  const enc=async(i)=>{const d=await ffEncodeStep(ff,"c_in.gif","c_out.gif",baseW,L[i]);return {data:d,size:d.length,step:L[i],fits:d.length<=target};};
+  let r=await enc(0);if(r.fits){/*best*/}else{let lo=1,hi=L.length-1,best=null;while(lo<=hi){const mid=(lo+hi)>>1;const rr=await enc(mid);if(rr.fits){best=rr;hi=mid-1;}else lo=mid+1;}r=best||r;}
+  prog&&prog(`сжато → ${(r.size/1048576).toFixed(2)} МБ${r.step.fps?`, ${r.step.fps}fps`:""}`);
+  return {data:r.data,fps:r.step.fps||null,fits:r.fits};
+}
+async function ffCompressSynced(ff,pieces,baseWs,target,prog){
+  const keys=Object.keys(pieces).sort((a,b)=>baseWs[b]-baseWs[a]);const master=keys[0];
+  prog&&prog(`Сжимаю «${master}» (задаёт fps)…`);
+  const mr=await ffCompress(ff,pieces[master],baseWs[master],target,null,prog);pieces[master]=mr.data;const tfps=mr.fps;
+  for(const k of keys.slice(1)){prog&&prog(`Синхронизирую «${k}» под ${tfps||"исходный"} fps…`);const r=await ffCompress(ff,pieces[k],baseWs[k],target,tfps,prog);pieces[k]=r.data;}
+}
+
+// ── экспорт ZIP ──
+$("#exportBtn").onclick=async()=>{
+  if(!state.bg)return;$("#exportBtn").disabled=true;
+  const geom=curGeom();if($("#autoH").checked)autoHeight(),geom.height=+$("#height").value;
+  const scale=+$("#scale").value;const stem=(state.bg.name||"artwork").replace(/\.[^.]+$/,"");const zip=new JSZip();
+  const custom=$('input[name=source][value=custom]').checked&&state.custom;
+  const animatedSrc=animExt(custom?state.custom.name:state.bg.name);
+  try{
+    if(animatedSrc){
+      const prog=(m)=>$("#sliceStatus").textContent="⏳ "+m;const ff=await getFF(prog);
+      const pieces=await ffSlice(ff,geom,scale,prog);
+      const baseWs={big:(geom.featured?G.featured_w:G.center_w)*scale,small:G.side_w*scale};
+      if($("#compress").checked)await ffCompressSynced(ff,pieces,baseWs,SAFE,prog);
+      for(const k in pieces)zip.file(`${stem}_${k}.gif`,pieces[k]);
+    }else{
+      $("#sliceStatus").textContent="⏳ Нарезаю…";const pieces=await sliceStatic(geom,scale);
+      for(const k in pieces)zip.file(`${stem}_${k}.png`,pieces[k]);
+    }
+    const blob=await zip.generateAsync({type:"blob"});dl(blob,stem+"_steam.zip");
+    $("#sliceStatus").textContent="✅ Готово: ZIP скачан. Как залить — вкладка «Загрузка».";
+  }catch(e){$("#sliceStatus").textContent="❌ "+(e&&e.message||e);}
+  $("#exportBtn").disabled=false;
+};
+function dl(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();}
+
+// ── GIF-подгонка ──
+let fitFile=null;
+$("#fitFile").onchange=e=>{fitFile=e.target.files[0]||null;$("#fitMeta").textContent=fitFile?`${fitFile.name} · ${Math.round(fitFile.size/1024)} КБ`:"Файл не выбран";$("#fitBtn").disabled=!fitFile;};
+$("#fitBtn").onclick=async()=>{
+  if(!fitFile)return;$("#fitBtn").disabled=true;const prog=(m)=>$("#fitStatus").textContent="⏳ "+m;
+  try{const ff=await getFF(prog);await ff.writeFile("fit.gif",new Uint8Array(await fitFile.arrayBuffer()));
+    const preset=$("#fitPreset").value,scale=+$("#fitScale").value;const bw=preset==="orig"?(await probeDim(ff,"fit.gif")).w:(+preset*scale);
+    const target=Math.floor((+$("#fitLimit").value)*1048576*0.97);
+    const r=await ffCompress(ff,await ff.readFile("fit.gif"),bw,target,null,prog);
+    dl(new Blob([r.data],{type:"image/gif"}),fitFile.name.replace(/\.[^.]+$/,"")+"_steam.gif");
+    $("#fitStatus").textContent=r.fits?"✅ Влезло, GIF скачан.":"⚠️ Не удалось уложить (скачан наименьший).";
+    $("#fitResult").textContent=`${(r.data.length/1048576).toFixed(2)} МБ · ${r.fps||"исходный"} fps`;
+  }catch(e){$("#fitStatus").textContent="❌ "+(e&&e.message||e);}
+  $("#fitBtn").disabled=false;
+};
+
+// ── РЕНДЕР ПРОФИЛЯ ──
+async function renderChrome(){
+  const wrap=$(".stage-wrap");wrap.style.height="1500px";const frame=$("#chromeFrame");
+  const sid=account?account.steamid64:"";
+  const html=await fetch(proxy("profile-page",sid?`&steamid=${sid}`:"")).then(r=>r.text());
+  const bgUrl=state.bg?state.bg.url:(account?account.bg_url:"");
+  frame.srcdoc=bgUrl?html.replace(BG_RE,(m,a,b)=>a+bgUrl+b):html;
+  $("#profileHint").textContent=account?"1:1 хром: ваш профиль Steam с подставленным фоном.":"1:1 хром: демо-профиль Steam с вашим фоном. Войдите — увидите свой.";
+}
+function renderProfile(){
+  const stage=$("#stage"),wrap=$(".stage-wrap"),frame=$("#chromeFrame");
+  if($("#realChrome").checked&&(state.bg||(account&&account.bg_url))){stage.style.display="none";frame.style.display="block";renderChrome();return;}
+  stage.style.display="";frame.style.display="none";
+  const bg=state.bg;
+  let src,animated;
+  if(bg){src=bg;animated=renderAnimated();}else if(account&&account.bg_url){src={url:proxy("img",`&url=${encodeURIComponent(account.bg_url)}`),w:1920,h:1080};animated=account.bg_animated;}
+  else{stage.innerHTML="";$("#profileHint").textContent="Загрузите фон или войдите через Steam.";wrap.style.height="360px";return;}
+  const featured=featuredMode(),artY=+$("#artY").value,gap=+$("#gap").value;let height=+$("#height").value;
+  const areaW=featured?G.featured_w:G.center_w+gap+G.side_w,bigW=featured?G.featured_w:G.center_w,pageH=Math.max(artY+height+140,1080);
+  const scale=wrap.clientWidth/G.viewport_w;stage.style.transform=`scale(${scale})`;stage.style.height=pageH+"px";wrap.style.height=(pageH*scale)+"px";
+  const custom=$('input[name=source][value=custom]').checked&&state.custom,cx=G.content_x,artX=G.art_x,p=[];
+  if(animated&&isVideoName(src.name||src.url))p.push(`<video class="ps-bg" autoplay muted loop playsinline src="${src.url}"></video>`);
+  else p.push(`<div class="ps-bg" style="background:url('${src.url}') center top / ${animated?"1920px auto":"auto"} no-repeat"></div>`);
+  p.push(`<div class="ps-tint"></div>`);
+  const av=account&&account.avatar_url?`<img src="${account.avatar_url}">`:"";
+  p.push(`<div class="ps-avatar" style="left:${cx+12}px;top:24px;width:164px;height:164px">${av}</div>`);
+  p.push(`<div class="ps-nick" style="left:${cx+188}px;top:30px">${account?esc(account.nick):"Ваш профиль"}</div>`);
+  p.push(`<div class="ps-state" style="left:${cx+188}px;top:82px">${account?"В сети":""}</div>`);
+  const lx2=cx+952-90;p.push(`<div class="ps-level" style="left:${lx2}px;top:32px;width:56px;height:56px">${account&&account.level!=null?account.level:""}</div>`);
+  p.push(`<div class="ps-title" style="left:${cx}px;top:${artY-48}px;width:${G.leftcol_w}px;height:40px">${featured?"Витрина избранных иллюстраций":"Витрина иллюстраций"}</div>`);
+  if($("#showPieces").checked){
+    if(custom){const isV=state.custom.animated&&isVideoName(state.custom.name);const m=isV?`<video autoplay muted loop playsinline src="${state.custom.url}"></video>`:`<img src="${state.custom.url}">`;p.push(`<div class="ps-piece" style="left:${artX}px;top:${artY}px;width:${areaW}px;height:${height}px">${m}</div>`);}
+    if(!featured)p.push(`<div class="ps-gap" style="left:${artX+bigW}px;top:${artY}px;width:${gap}px;height:${height}px"></div>`);
+    p.push(`<div class="ps-outline" style="left:${artX}px;top:${artY}px;width:${areaW}px;height:${height}px"></div>`);
+  }
+  let ry=artY-48;for(const h of [120,160,100]){if(ry+h>pageH-40)break;p.push(`<div class="ps-rpanel" style="left:${G.rightcol_x}px;top:${ry}px;width:${G.rightcol_w}px;height:${h}px"></div>`);let ly=ry+16;for(const w of [180,120,200]){if(ly+12>ry+h-12)break;p.push(`<div class="ps-rline" style="left:${G.rightcol_x+14}px;top:${ly}px;width:${w}px;height:12px"></div>`);ly+=26;}ry+=h+14;}
+  stage.innerHTML=p.join("");
+  $("#profileHint").textContent=account?`Профиль: ${account.nick}.`:"Предпросмотр профиля.";
+}
+
+// ── каталог ──
+let catCursor="*",catAppid=null,catLoaded=false;
+function catalogAuto(){if(!catLoaded){catLoaded=true;catCursor="*";catAppid=null;$("#catGrid").innerHTML="";loadCat();}}
+$("#gameSearchBtn").onclick=async()=>{const term=$("#gameSearch").value.trim();if(!term)return;const r=await jget(proxy("search-games",`&term=${encodeURIComponent(term)}`));const s=$("#gameSel");s.innerHTML="";(r.games||[]).forEach(g=>{const o=document.createElement("option");o.value=g.appid;o.textContent=`${g.name} [${g.appid}]`;s.append(o);});$("#catStatus").textContent=`Найдено игр: ${(r.games||[]).length}`;};
+$("#catLoadBtn").onclick=()=>{catCursor="*";catAppid=$("#gameSel").value||null;$("#catGrid").innerHTML="";loadCat();};
+$("#catMore").onclick=()=>loadCat();
+async function loadCat(){$("#catStatus").textContent="⏳ Загружаю…";const q=`&cursor=${encodeURIComponent(catCursor)}`+(catAppid?`&appid=${catAppid}`:"");const r=await jget(proxy("catalog",q));if(r.error){$("#catStatus").textContent="❌ "+r.error;return;}const grid=$("#catGrid");(r.items||[]).forEach(it=>{const c=document.createElement("div");c.className="cat-card";c.innerHTML=`<img loading="lazy" src="${proxy("img",`&url=${encodeURIComponent(it.image_url)}`)}"><div class="cap">${esc(it.title)}<br><span class="cost">${it.point_cost} очков</span></div>`;c.onclick=()=>useCat(it);grid.append(c);});catCursor=r.next_cursor;$("#catMore").disabled=!catCursor;$("#catStatus").textContent=`Анимированных фонов: ${grid.children.length}`+(catCursor?"":" (это всё)");}
+async function useCat(it){$("#catStatus").textContent="⏳ Загружаю фон…";const url=it.movie_url||it.image_url;const blob=await fetch(proxy("img",`&url=${encodeURIComponent(url)}`)).then(x=>x.blob());await setBg(blob,!!it.movie_url,it.title);$("#catStatus").textContent="✅ Фон загружен.";document.querySelector('.tab[data-tab="profile"]').click();}
+
+// ── инструкция загрузки ──
+let guideLoaded=false;
+function loadGuide(){if(guideLoaded)return;guideLoaded=true;$("#uploadGuide").innerHTML=`<h4>Как загрузить куски в Steam</h4><p>Steam не принимает такие размеры через обычную форму — нужен скрипт в консоли. Для <b>каждого</b> куска из ZIP:</p><ol><li>Войдите в Steam в браузере, откройте страницу загрузки (кнопка ниже). Нужен уровень 10+.</li><li>«Choose File» → выберите кусок (<code>*_big</code>/<code>*_small</code>), ≤ 5 МБ.</li><li>Консоль: Chrome <code>Ctrl+Shift+J</code>, Firefox <code>Ctrl+Shift+K</code>.</li><li>Вставьте скрипт (кнопка «Скопировать») → Enter:<br><code>${esc(CONSOLE_SCRIPT)}</code></li><li>Название, галочка «I certify…», «Save and Continue».</li><li>Повторите для второго куска (в селекторе он — тонкая чёрная полоска, это норма).</li><li>Редактировать профиль → Витрины → выберите куски. Установите тот же фон.</li></ol>`;}
+$("#openUpload").onclick=()=>window.open(UPLOAD_URL,"_blank");
+$("#copyScript").onclick=()=>{navigator.clipboard.writeText(CONSOLE_SCRIPT);$("#uploadStatus").textContent="✅ Скрипт скопирован.";};
+
+// ── старт ──
+window.addEventListener("resize",()=>{if(!$("#realChrome").checked)renderProfile();});
+loadMe();
+if(new URLSearchParams(location.search).get("login"))history.replaceState({},"","/");
+</script>
+</body>
+</html>
