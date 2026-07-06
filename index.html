@@ -54,6 +54,28 @@ fieldset{border:1px solid var(--border);border-radius:6px;margin:8px 0}legend{co
 .cat-card .cap{padding:8px;font-size:13px}.cat-card .cost{color:var(--accent)}
 .guide{background:#14141a;border:1px solid var(--border);border-radius:8px;padding:16px;max-width:800px;line-height:1.5}
 .guide code{background:#22222c;padding:2px 6px;border-radius:4px;color:#9fe}.guide h4{color:var(--accent)}
+/* Рекламные слоты (вставьте код своей сети внутрь <div class="ad">) */
+.ad{margin:10px auto;max-width:970px;min-height:90px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#12121a;border:1px dashed #2a2a33;border-radius:8px}
+.ad:empty::before{content:"Место для рекламы 970×90";color:#556;font-size:12px}
+.ad-side{max-width:300px;min-height:250px}.ad-side:empty::before{content:"Реклама 300×250"}
+/* ── Мобильная вёрстка ── */
+@media(max-width:760px){
+  main{padding:12px 10px}
+  .topbar{gap:8px;padding:8px 10px}
+  .brand span{display:none}
+  .tabs{width:100%;order:3;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+  .tab{padding:6px 10px;font-size:13px;white-space:nowrap}
+  .account{margin-left:auto}
+  #accountName{display:none}
+  .slice-layout{grid-template-columns:1fr}
+  .preview-col{position:static}
+  #chromeFrame,#sliceFrame{height:64vh;min-height:340px}
+  .catalog-grid{grid-template-columns:1fr 1fr;gap:8px}
+  .cat-card img{height:88px}.cat-card .cap{padding:6px;font-size:12px}
+  input[type=text]{flex:1 1 100%;min-width:0}
+  .ad{min-height:60px}.ad:empty::before{content:"Реклама"}
+  .ad-side{max-width:100%}
+}
 </style>
 </head>
 <body>
@@ -68,6 +90,8 @@ fieldset{border:1px solid var(--border);border-radius:6px;margin:8px 0}legend{co
   </nav>
   <div class="account"><span id="accountName"></span><button id="loginBtn" class="btn">🔓 Войти через Steam</button></div>
 </header>
+<!-- Реклама (верхний баннер). Вставьте сюда код своей рекламной сети. -->
+<div class="ad" id="adTop"></div>
 <main>
   <section class="panel active" data-panel="profile">
     <div class="profile-toolbar"><span class="hint" id="profileHint">Загрузите фон во вкладке «Нарезка» или войдите через Steam — здесь будет ваш реальный профиль Steam.</span></div>
@@ -138,8 +162,14 @@ fieldset{border:1px solid var(--border);border-radius:6px;margin:8px 0}legend{co
     <div class="row"><button class="btn" id="openUpload">🌐 Страница загрузки Steam</button><button class="btn" id="copyScript">📋 Скопировать скрипт</button><span class="status" id="uploadStatus"></span></div>
   </section>
 </main>
+<!-- Реклама (нижний баннер). Вставьте сюда код своей рекламной сети. -->
+<div class="ad" id="adBottom" style="margin-bottom:20px"></div>
 <script>
 "use strict";
+// ★ ВЫЧИСЛЕНИЯ НА ВАШЕМ СЕРВЕРЕ: укажите публичный HTTPS-URL FastAPI-бэкенда
+//   (напр. "https://scre.ваш-домен.ру"). Пусто = считать в браузере (ffmpeg.wasm).
+//   На сервере включён CORS; нарезка/сжатие идут через /api/slice и /api/fit-gif.
+const COMPUTE_BACKEND="";
 // ── константы геометрии Steam (совпадают с ядром десктопа) ──
 const G={viewport_w:1920,content_x:484,art_x:492,art_y:286,center_w:506,side_w:100,featured_w:630,gap:9,leftcol_w:652,rightcol_x:1148,rightcol_w:288,max_bytes:5242880};
 const SAFE=Math.floor(G.max_bytes*0.97);
@@ -285,27 +315,61 @@ async function ffCompressSynced(ff,pieces,baseWs,target,prog){
   for(const k of keys.slice(1)){prog&&prog(`Синхронизирую «${k}» под ${tfps||"исходный"} fps…`);const r=await ffCompress(ff,pieces[k],baseWs[k],target,tfps,prog);pieces[k]=r.data;}
 }
 
+// ── отказоустойчивость: сервер → браузер ──
+// fetch с таймаутом (AbortController), чтобы «зависший» сервер не блокировал.
+async function fetchTO(url,opts,ms){const c=new AbortController();const t=setTimeout(()=>c.abort(),ms);try{return await fetch(url,{...opts,signal:c.signal});}finally{clearTimeout(t);}}
+// Быстрая проверка живости бэкенда (лёгкий /api/geometry, короткий таймаут).
+async function backendAlive(){if(!COMPUTE_BACKEND)return false;try{const r=await fetchTO(COMPUTE_BACKEND.replace(/\/$/,"")+"/api/geometry",{},4000);return r.ok;}catch{return false;}}
+
 // ── экспорт ZIP ──
+async function serverSlice(geom,scale,custom){
+  const fd=new FormData();
+  fd.append("background",state.bg.blob,state.bg.name||"bg");
+  if(custom)fd.append("artwork",state.custom.blob,state.custom.name||"art");
+  const f=fitParams();
+  fd.append("art_y",geom.art_y);fd.append("height",$("#autoH").checked?"auto":geom.height);
+  fd.append("gap",geom.gap);fd.append("featured",geom.featured);fd.append("scale",scale);
+  fd.append("render",$("#render").value);fd.append("source",custom?"custom":"bg");
+  fd.append("offx",f.offx);fd.append("offy",f.offy);fd.append("zoom",f.zoom);
+  fd.append("compress",$("#compress").checked);
+  const r=await fetchTO(COMPUTE_BACKEND.replace(/\/$/,"")+"/api/slice",{method:"POST",body:fd},120000);
+  if(!r.ok)throw new Error("сервер вернул "+r.status);
+  return await r.blob();
+}
+async function clientSlice(geom,scale,animatedSrc,stem){
+  const zip=new JSZip();
+  if(animatedSrc){
+    const prog=(m)=>$("#sliceStatus").textContent="⏳ "+m;const ff=await getFF(prog);
+    const pieces=await ffSlice(ff,geom,scale,prog);
+    const baseWs={big:(geom.featured?G.featured_w:G.center_w)*scale,small:G.side_w*scale};
+    if($("#compress").checked)await ffCompressSynced(ff,pieces,baseWs,SAFE,prog);
+    for(const k in pieces)zip.file(`${stem}_${k}.gif`,pieces[k]);
+  }else{
+    $("#sliceStatus").textContent="⏳ Нарезаю в браузере…";const pieces=await sliceStatic(geom,scale);
+    for(const k in pieces)zip.file(`${stem}_${k}.png`,pieces[k]);
+  }
+  return await zip.generateAsync({type:"blob"});
+}
 $("#exportBtn").onclick=async()=>{
   if(!state.bg)return;$("#exportBtn").disabled=true;
   const geom=curGeom();if($("#autoH").checked)autoHeight(),geom.height=+$("#height").value;
-  const scale=+$("#scale").value;const stem=(state.bg.name||"artwork").replace(/\.[^.]+$/,"");const zip=new JSZip();
+  const scale=+$("#scale").value;const stem=(state.bg.name||"artwork").replace(/\.[^.]+$/,"");
   const custom=$('input[name=source][value=custom]').checked&&state.custom;
   const animatedSrc=animExt(custom?state.custom.name:state.bg.name);
+  const setS=(m)=>$("#sliceStatus").textContent=m;
   try{
-    if(animatedSrc){
-      const prog=(m)=>$("#sliceStatus").textContent="⏳ "+m;const ff=await getFF(prog);
-      const pieces=await ffSlice(ff,geom,scale,prog);
-      const baseWs={big:(geom.featured?G.featured_w:G.center_w)*scale,small:G.side_w*scale};
-      if($("#compress").checked)await ffCompressSynced(ff,pieces,baseWs,SAFE,prog);
-      for(const k in pieces)zip.file(`${stem}_${k}.gif`,pieces[k]);
-    }else{
-      $("#sliceStatus").textContent="⏳ Нарезаю…";const pieces=await sliceStatic(geom,scale);
-      for(const k in pieces)zip.file(`${stem}_${k}.png`,pieces[k]);
+    let blob=null,via="браузер";
+    if(COMPUTE_BACKEND){
+      setS("⏳ Проверяю сервер…");
+      if(await backendAlive()){
+        try{setS("⏳ Считаю на сервере…");blob=await serverSlice(geom,scale,custom);via="сервер";}
+        catch(e){setS("⚠️ Сервер не ответил — переключаюсь на браузер…");blob=null;}
+      }else setS("⚠️ Сервер недоступен — считаю в браузере…");
     }
-    const blob=await zip.generateAsync({type:"blob"});dl(blob,stem+"_steam.zip");
-    $("#sliceStatus").textContent="✅ Готово: ZIP скачан. Как залить — вкладка «Загрузка».";
-  }catch(e){$("#sliceStatus").textContent="❌ "+(e&&e.message||e);}
+    if(!blob)blob=await clientSlice(geom,scale,animatedSrc,stem);
+    dl(blob,stem+"_steam.zip");
+    setS(`✅ Готово (${via}): ZIP скачан. Как залить — вкладка «Загрузка».`);
+  }catch(e){setS("❌ "+(e&&e.message||e));}
   $("#exportBtn").disabled=false;
 };
 function dl(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();}
@@ -313,15 +377,37 @@ function dl(blob,name){const a=document.createElement("a");a.href=URL.createObje
 // ── GIF-подгонка ──
 let fitFile=null;
 $("#fitFile").onchange=e=>{fitFile=e.target.files[0]||null;$("#fitMeta").textContent=fitFile?`${fitFile.name} · ${Math.round(fitFile.size/1024)} КБ`:"Файл не выбран";$("#fitBtn").disabled=!fitFile;};
+async function serverFit(preset,scale){
+  const fd=new FormData();fd.append("gif",fitFile,fitFile.name);
+  fd.append("target_w",preset==="orig"?"orig":String(+preset*scale));fd.append("limit_mb",$("#fitLimit").value);
+  const r=await fetchTO(COMPUTE_BACKEND.replace(/\/$/,"")+"/api/fit-gif",{method:"POST",body:fd},120000);
+  if(!r.ok)throw new Error("сервер вернул "+r.status);
+  const blob=await r.blob();
+  return {blob,fits:r.headers.get("X-Scre-Fits")==="true",info:`${(blob.size/1048576).toFixed(2)} МБ · ${r.headers.get("X-Scre-Fps")||"?"} fps · ${decodeURIComponent(r.headers.get("X-Scre-Quality")||"")}`};
+}
+async function clientFit(preset,scale,prog){
+  const ff=await getFF(prog);await ff.writeFile("fit.gif",new Uint8Array(await fitFile.arrayBuffer()));
+  const bw=preset==="orig"?(await probeDim(ff,"fit.gif")).w:(+preset*scale);
+  const target=Math.floor((+$("#fitLimit").value)*1048576*0.97);
+  const r=await ffCompress(ff,await ff.readFile("fit.gif"),bw,target,null,prog);
+  return {blob:new Blob([r.data],{type:"image/gif"}),fits:r.fits,info:`${(r.data.length/1048576).toFixed(2)} МБ · ${r.fps||"исходный"} fps`};
+}
 $("#fitBtn").onclick=async()=>{
   if(!fitFile)return;$("#fitBtn").disabled=true;const prog=(m)=>$("#fitStatus").textContent="⏳ "+m;
-  try{const ff=await getFF(prog);await ff.writeFile("fit.gif",new Uint8Array(await fitFile.arrayBuffer()));
-    const preset=$("#fitPreset").value,scale=+$("#fitScale").value;const bw=preset==="orig"?(await probeDim(ff,"fit.gif")).w:(+preset*scale);
-    const target=Math.floor((+$("#fitLimit").value)*1048576*0.97);
-    const r=await ffCompress(ff,await ff.readFile("fit.gif"),bw,target,null,prog);
-    dl(new Blob([r.data],{type:"image/gif"}),fitFile.name.replace(/\.[^.]+$/,"")+"_steam.gif");
-    $("#fitStatus").textContent=r.fits?"✅ Влезло, GIF скачан.":"⚠️ Не удалось уложить (скачан наименьший).";
-    $("#fitResult").textContent=`${(r.data.length/1048576).toFixed(2)} МБ · ${r.fps||"исходный"} fps`;
+  const preset=$("#fitPreset").value,scale=+$("#fitScale").value;
+  try{
+    let res=null,via="браузер";
+    if(COMPUTE_BACKEND){
+      prog("Проверяю сервер…");
+      if(await backendAlive()){
+        try{prog("Считаю на сервере…");res=await serverFit(preset,scale);via="сервер";}
+        catch(e){prog("⚠️ Сервер не ответил — переключаюсь на браузер…");res=null;}
+      }else prog("⚠️ Сервер недоступен — считаю в браузере…");
+    }
+    if(!res)res=await clientFit(preset,scale,prog);
+    dl(res.blob,fitFile.name.replace(/\.[^.]+$/,"")+"_steam.gif");
+    $("#fitStatus").textContent=(res.fits?"✅ Влезло":"⚠️ Не удалось уложить (скачан наименьший)")+` — GIF скачан (${via}).`;
+    $("#fitResult").textContent=res.info;
   }catch(e){$("#fitStatus").textContent="❌ "+(e&&e.message||e);}
   $("#fitBtn").disabled=false;
 };
