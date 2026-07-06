@@ -71,7 +71,7 @@ fieldset{border:1px solid var(--border);border-radius:6px;margin:8px 0}legend{co
       <label><input type="checkbox" id="showPieces" checked> Показывать куски</label>
       <span class="hint" id="profileHint">Загрузите фон во вкладке «Нарезка» или войдите через Steam.</span>
     </div>
-    <div class="stage-wrap">
+    <div class="stage-wrap" id="profileWrap">
       <div class="profile-stage" id="stage"></div>
       <iframe id="chromeFrame" title="Steam profile" style="display:none"></iframe>
     </div>
@@ -111,6 +111,8 @@ fieldset{border:1px solid var(--border);border-radius:6px;margin:8px 0}legend{co
         <div class="status" id="sliceStatus"></div>
       </div>
     </div>
+    <h3>Предпросмотр</h3>
+    <div class="stage-wrap" id="sliceWrap" style="max-width:700px"><div class="profile-stage" id="sliceStage"></div></div>
   </section>
 
   <section class="panel" data-panel="fit">
@@ -130,7 +132,8 @@ fieldset{border:1px solid var(--border);border-radius:6px;margin:8px 0}legend{co
   </section>
 
   <section class="panel" data-panel="catalog">
-    <div class="row"><input type="text" id="gameSearch" placeholder="Название игры (пусто = всё)"><button class="btn" id="gameSearchBtn">🔍 Найти</button><select id="gameSel"></select><button class="btn" id="catLoadBtn">📥 Показать</button></div>
+    <div class="row"><input type="text" id="catFilter" placeholder="Фильтр по названию фона"><button class="btn ghost" id="catReset">↺ Сбросить</button></div>
+    <div class="row"><input type="text" id="gameSearch" placeholder="Название игры"><button class="btn" id="gameSearchBtn">🔍 Найти игру</button><select id="gameSel"></select><button class="btn" id="catLoadBtn">📥 Показать игру</button></div>
     <div class="catalog-grid" id="catGrid"></div>
     <div class="row"><button class="btn" id="catMore" disabled>⤵️ Ещё</button><span class="status" id="catStatus"></span></div>
   </section>
@@ -164,7 +167,7 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
   t.classList.add("active");$(`.panel[data-panel="${t.dataset.tab}"]`).classList.add("active");
   if(t.dataset.tab==="catalog")catalogAuto();
-  if(t.dataset.tab==="profile")renderProfile();
+  if(t.dataset.tab==="profile"||t.dataset.tab==="slice")renderProfile();
   if(t.dataset.tab==="upload")loadGuide();
 });
 
@@ -175,7 +178,12 @@ async function loadMe(){ const r=await jget("/api/steam-auth?action=me"); if(r.l
 
 // ── источник фона ──
 async function loadBitmap(blob,animated,name){
-  if(animated&&isVideoName(name)){ const v=document.createElement("video");v.muted=true;v.src=URL.createObjectURL(blob);await v.play().catch(()=>{});await new Promise(r=>{if(v.readyState>=2)r();else v.onloadeddata=r;}); return {w:v.videoWidth,h:v.videoHeight}; }
+  if(isVideoName(name)){ const v=document.createElement("video");v.muted=true;v.src=URL.createObjectURL(blob);await v.play().catch(()=>{});await new Promise(r=>{if(v.readyState>=2)r();else v.onloadeddata=r;}); return {w:v.videoWidth||1920,h:v.videoHeight||1080}; }
+  if(animated||/\.gif$/i.test(name)){ // анимированный GIF: createImageBitmap его не декодит — размеры через <img>
+    const img=new Image(); img.src=URL.createObjectURL(blob);
+    await new Promise(r=>{img.onload=r;img.onerror=r;});
+    return {w:img.naturalWidth||1920,h:img.naturalHeight||1080};
+  }
   const bmp=await createImageBitmap(blob); return {w:bmp.width,h:bmp.height,bmp};
 }
 async function setBg(blob,animated,name){
@@ -323,24 +331,22 @@ $("#fitBtn").onclick=async()=>{
 
 // ── РЕНДЕР ПРОФИЛЯ ──
 async function renderChrome(){
-  const wrap=$(".stage-wrap");wrap.style.height="1500px";const frame=$("#chromeFrame");
+  const wrap=$("#profileWrap");wrap.style.height="1500px";const frame=$("#chromeFrame");
   const sid=account?account.steamid64:"";
   const html=await fetch(proxy("profile-page",sid?`&steamid=${sid}`:"")).then(r=>r.text());
   const bgUrl=state.bg?state.bg.url:(account?account.bg_url:"");
   frame.srcdoc=bgUrl?html.replace(BG_RE,(m,a,b)=>a+bgUrl+b):html;
   $("#profileHint").textContent=account?"1:1 хром: ваш профиль Steam с подставленным фоном.":"1:1 хром: демо-профиль Steam с вашим фоном. Войдите — увидите свой.";
 }
-function renderProfile(){
-  const stage=$("#stage"),wrap=$(".stage-wrap"),frame=$("#chromeFrame");
-  if($("#realChrome").checked&&(state.bg||(account&&account.bg_url))){stage.style.display="none";frame.style.display="block";renderChrome();return;}
-  stage.style.display="";frame.style.display="none";
-  const bg=state.bg;
-  let src,animated;
-  if(bg){src=bg;animated=renderAnimated();}else if(account&&account.bg_url){src={url:proxy("img",`&url=${encodeURIComponent(account.bg_url)}`),w:1920,h:1080};animated=account.bg_animated;}
-  else{stage.innerHTML="";$("#profileHint").textContent="Загрузите фон или войдите через Steam.";wrap.style.height="360px";return;}
+// Отрисовка canvas-макета в конкретный контейнер (профиль ИЛИ превью в «Нарезке»)
+function paintMockup(stage,wrap,hintEl){
+  const bg=state.bg; let src,animated;
+  if(bg){src=bg;animated=renderAnimated();}
+  else if(account&&account.bg_url){src={url:proxy("img",`&url=${encodeURIComponent(account.bg_url)}`),w:1920,h:1080};animated=account.bg_animated;}
+  else{stage.innerHTML="";wrap.style.height="300px";if(hintEl)hintEl.textContent="Загрузите фон или войдите через Steam.";return;}
   const featured=featuredMode(),artY=+$("#artY").value,gap=+$("#gap").value;let height=+$("#height").value;
   const areaW=featured?G.featured_w:G.center_w+gap+G.side_w,bigW=featured?G.featured_w:G.center_w,pageH=Math.max(artY+height+140,1080);
-  const scale=wrap.clientWidth/G.viewport_w;stage.style.transform=`scale(${scale})`;stage.style.height=pageH+"px";wrap.style.height=(pageH*scale)+"px";
+  const scale=(wrap.clientWidth||700)/G.viewport_w;stage.style.transform=`scale(${scale})`;stage.style.height=pageH+"px";wrap.style.height=(pageH*scale)+"px";
   const custom=$('input[name=source][value=custom]').checked&&state.custom,cx=G.content_x,artX=G.art_x,p=[];
   if(animated&&isVideoName(src.name||src.url))p.push(`<video class="ps-bg" autoplay muted loop playsinline src="${src.url}"></video>`);
   else p.push(`<div class="ps-bg" style="background:url('${src.url}') center top / ${animated?"1920px auto":"auto"} no-repeat"></div>`);
@@ -358,16 +364,32 @@ function renderProfile(){
   }
   let ry=artY-48;for(const h of [120,160,100]){if(ry+h>pageH-40)break;p.push(`<div class="ps-rpanel" style="left:${G.rightcol_x}px;top:${ry}px;width:${G.rightcol_w}px;height:${h}px"></div>`);let ly=ry+16;for(const w of [180,120,200]){if(ly+12>ry+h-12)break;p.push(`<div class="ps-rline" style="left:${G.rightcol_x+14}px;top:${ly}px;width:${w}px;height:12px"></div>`);ly+=26;}ry+=h+14;}
   stage.innerHTML=p.join("");
-  $("#profileHint").textContent=account?`Профиль: ${account.nick}.`:"Предпросмотр профиля.";
+  if(hintEl)hintEl.textContent=account?`Профиль: ${account.nick}.`:"Предпросмотр профиля.";
+}
+function renderProfile(){
+  const stage=$("#stage"),frame=$("#chromeFrame");
+  if($("#realChrome").checked&&(state.bg||(account&&account.bg_url))){stage.style.display="none";frame.style.display="block";renderChrome();}
+  else{stage.style.display="";frame.style.display="none";paintMockup(stage,$("#profileWrap"),$("#profileHint"));}
+  const ss=$("#sliceStage");if(ss)paintMockup(ss,$("#sliceWrap"),null);   // живое превью в «Нарезке»
 }
 
 // ── каталог ──
 let catCursor="*",catAppid=null,catLoaded=false;
-function catalogAuto(){if(!catLoaded){catLoaded=true;catCursor="*";catAppid=null;$("#catGrid").innerHTML="";loadCat();}}
-$("#gameSearchBtn").onclick=async()=>{const term=$("#gameSearch").value.trim();if(!term)return;const r=await jget(proxy("search-games",`&term=${encodeURIComponent(term)}`));const s=$("#gameSel");s.innerHTML="";(r.games||[]).forEach(g=>{const o=document.createElement("option");o.value=g.appid;o.textContent=`${g.name} [${g.appid}]`;s.append(o);});$("#catStatus").textContent=`Найдено игр: ${(r.games||[]).length}`;};
-$("#catLoadBtn").onclick=()=>{catCursor="*";catAppid=$("#gameSel").value||null;$("#catGrid").innerHTML="";loadCat();};
+function catalogAuto(){if(!catLoaded){catLoaded=true;resetCatalog();}}
+function resetCatalog(){catCursor="*";catAppid=null;$("#catFilter").value="";$("#gameSearch").value="";$("#gameSel").innerHTML="";$("#catGrid").innerHTML="";loadCat();}
+function applyFilter(){const q=$("#catFilter").value.trim().toLowerCase();const cards=[...document.querySelectorAll("#catGrid .cat-card")];let vis=0;cards.forEach(c=>{const ok=!q||c.dataset.title.includes(q);c.style.display=ok?"":"none";if(ok)vis++;});$("#catStatus").textContent=q?`Показано по фильтру «${$("#catFilter").value.trim()}»: ${vis} из ${cards.length}`:(catAppid?`Фонов игры: ${cards.length}`:`Анимированных фонов: ${cards.length}`)+(catCursor?"":" (это всё)");}
+$("#catReset").onclick=resetCatalog;
+$("#catFilter").oninput=applyFilter;
+$("#gameSearchBtn").onclick=async()=>{const term=$("#gameSearch").value.trim();if(!term)return;const r=await jget(proxy("search-games",`&term=${encodeURIComponent(term)}`));const s=$("#gameSel");s.innerHTML="";(r.games||[]).forEach(g=>{const o=document.createElement("option");o.value=g.appid;o.textContent=`${g.name} [${g.appid}]`;s.append(o);});$("#catStatus").textContent=(r.games||[]).length?`Найдено игр: ${r.games.length} — выберите и «Показать игру»`:"Игр не найдено";};
+$("#catLoadBtn").onclick=()=>{if(!$("#gameSel").value){$("#catStatus").textContent="Сначала «Найти игру» и выберите её из списка.";return;}catCursor="*";catAppid=$("#gameSel").value;$("#catFilter").value="";$("#catGrid").innerHTML="";loadCat();};
 $("#catMore").onclick=()=>loadCat();
-async function loadCat(){$("#catStatus").textContent="⏳ Загружаю…";const q=`&cursor=${encodeURIComponent(catCursor)}`+(catAppid?`&appid=${catAppid}`:"");const r=await jget(proxy("catalog",q));if(r.error){$("#catStatus").textContent="❌ "+r.error;return;}const grid=$("#catGrid");(r.items||[]).forEach(it=>{const c=document.createElement("div");c.className="cat-card";c.innerHTML=`<img loading="lazy" src="${proxy("img",`&url=${encodeURIComponent(it.image_url)}`)}"><div class="cap">${esc(it.title)}<br><span class="cost">${it.point_cost} очков</span></div>`;c.onclick=()=>useCat(it);grid.append(c);});catCursor=r.next_cursor;$("#catMore").disabled=!catCursor;$("#catStatus").textContent=`Анимированных фонов: ${grid.children.length}`+(catCursor?"":" (это всё)");}
+async function loadCat(){$("#catStatus").textContent="⏳ Загружаю…";const q=`&cursor=${encodeURIComponent(catCursor)}`+(catAppid?`&appid=${catAppid}`:"");let r;try{r=await jget(proxy("catalog",q));}catch(e){$("#catStatus").textContent="❌ "+(e&&e.message||e);return;}if(r.error){$("#catStatus").textContent="❌ "+r.error;return;}
+  const grid=$("#catGrid");(r.items||[]).forEach(it=>{const c=document.createElement("div");c.className="cat-card";c.dataset.title=(it.title||"").toLowerCase();
+    c.innerHTML=`<img loading="lazy" referrerpolicy="no-referrer" src="${it.image_url}" onerror="this.style.visibility='hidden'"><div class="cap">${esc(it.title)}<br><span class="cost">${it.point_cost} очков</span></div>`;
+    c.onclick=()=>useCat(it);grid.append(c);});
+  catCursor=r.next_cursor;$("#catMore").disabled=!catCursor;const total=grid.children.length;
+  if(catAppid&&total===0)$("#catStatus").textContent="У этой игры нет анимированных фонов. Нажмите «Сбросить».";
+  else applyFilter();}
 async function useCat(it){$("#catStatus").textContent="⏳ Загружаю фон…";const url=it.movie_url||it.image_url;const blob=await fetch(proxy("img",`&url=${encodeURIComponent(url)}`)).then(x=>x.blob());await setBg(blob,!!it.movie_url,it.title);$("#catStatus").textContent="✅ Фон загружен.";document.querySelector('.tab[data-tab="profile"]').click();}
 
 // ── инструкция загрузки ──
