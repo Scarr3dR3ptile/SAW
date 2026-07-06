@@ -200,7 +200,7 @@ $("#linkBtn").onclick=async()=>{
 };
 $("#useMyBg").onclick=async()=>{ if(!account||!account.bg_url)return; const blob=await fetch(proxy("img",`&url=${encodeURIComponent(account.bg_url)}`)).then(x=>x.blob()); await setBg(blob,account.bg_animated,"Мой фон"); };
 document.querySelectorAll('input[name=source]').forEach(r=>r.onchange=()=>{const c=$('input[name=source][value=custom]').checked;$("#artFile").disabled=!c;$("#fitBox").disabled=!c;renderProfile();});
-$("#artFile").onchange=e=>{const f=e.target.files[0];if(f){state.custom={url:URL.createObjectURL(f),animated:animExt(f.name),name:f.name,blob:f};renderProfile();}};
+$("#artFile").onchange=async e=>{const f=e.target.files[0];if(!f)return;const d=await loadBitmap(f,animExt(f.name),f.name);state.custom={url:URL.createObjectURL(f),animated:animExt(f.name),name:f.name,blob:f,w:d.w,h:d.h};renderProfile();};
 
 // ── параметры ──
 const bindR=(id,out)=>{const el=$("#"+id);el.oninput=()=>{if(out)$("#"+out).textContent=el.value;renderProfile();};};
@@ -345,9 +345,13 @@ function injectShowcase(doc){
   const custom=$('input[name=source][value=custom]').checked&&state.custom;
   const areaW=featured?G.featured_w:G.center_w+gap+G.side_w,bigW=featured?G.featured_w:G.center_w;
   let inner="";
-  if(custom){const c=state.custom;const isV=c.animated&&isVideoName(c.name);
-    inner=isV?`<video autoplay loop muted playsinline src="${c.url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></video>`
-             :`<img src="${c.url}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">`;}
+  if(custom){const c=state.custom,f=fitParams();
+    // cover + смещение + зум — как coverCanvas в экспорте
+    const mw=c.w||16,mh=c.h||9,cover=Math.max(areaW/mw,height/mh)*Math.max(1,f.zoom);
+    const cw=Math.round(mw*cover),ch=Math.round(mh*cover),L=Math.round(-(cw-areaW)*f.offx),T=Math.round(-(ch-height)*f.offy);
+    const st=`position:absolute;left:${L}px;top:${T}px;width:${cw}px;height:${ch}px;max-width:none;object-fit:fill`;
+    const isV=c.animated&&isVideoName(c.name);
+    inner=isV?`<video autoplay loop muted playsinline src="${c.url}" style="${st}"></video>`:`<img src="${c.url}" style="${st}">`;}
   const gapDiv=featured?"":`<div style="position:absolute;left:${bigW}px;top:0;width:${gap}px;height:100%;background:rgba(0,0,0,.55);z-index:2"></div>`;
   const w=doc.createElement('div'); w.id='scre-showcase'; w.className='profile_customization';
   w.innerHTML=`<div class="profile_customization_header">${featured?"Витрина избранных иллюстраций":"Витрина иллюстраций"}</div>`+
