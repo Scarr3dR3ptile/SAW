@@ -52,6 +52,7 @@ fieldset{border:1px solid var(--border);border-radius:6px;margin:8px 0}legend{co
 .cat-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;cursor:pointer}
 .cat-card:hover{border-color:var(--accent)}.cat-card img{width:100%;height:112px;object-fit:cover;display:block;background:#000}
 .cat-card .cap{padding:8px;font-size:13px}.cat-card .cost{color:var(--accent)}
+.cat-pick{margin-top:8px;width:100%;font-size:12px;padding:5px;background:#3a5a3a;border-color:#4a7a4a}
 .guide{background:#14141a;border:1px solid var(--border);border-radius:8px;padding:16px;max-width:800px;line-height:1.5}
 .guide code{background:#22222c;padding:2px 6px;border-radius:4px;color:#9fe}.guide h4{color:var(--accent)}
 /* Рекламные слоты (вставьте код своей сети внутрь <div class="ad">) */
@@ -461,10 +462,11 @@ async function renderChrome(frame,wrap,inject){
   }else{doInject();}   // тот же фон, изменились параметры → только пере-инъекция витрины
 }
 function renderProfile(){
+  // Обе вкладки показывают настоящую страницу Steam с фоном И кусками в витрине.
   if(activeTab==="slice"){renderChrome($("#sliceFrame"),$("#sliceWrap"),true);}
-  else{renderChrome($("#chromeFrame"),$("#profileWrap"),false);}
-  if(!state.bg&&!(account&&account.bg_url))$("#profileHint").textContent="Загрузите фон во вкладке «Нарезка» или войдите через Steam — здесь будет ваш реальный профиль Steam.";
-  else $("#profileHint").textContent=account?`Реальный профиль Steam: ${account.nick}.`:"Реальная страница Steam с вашим фоном (демо-профиль; войдите — увидите свой).";
+  else{renderChrome($("#chromeFrame"),$("#profileWrap"),true);}
+  if(!state.bg&&!(account&&account.bg_url))$("#profileHint").textContent="Войдите через Steam или выберите фон в каталоге — здесь будет ваш профиль с нарезанным фоном.";
+  else $("#profileHint").textContent=account?`Реальный профиль Steam: ${account.nick} — фон и нарезка в витрине.`:"Реальная страница Steam с вашим фоном и нарезкой в витрине (демо-профиль; войдите — увидите свой).";
 }
 
 // ── каталог ──
@@ -479,12 +481,12 @@ $("#catLoadBtn").onclick=()=>{if(!$("#gameSel").value){$("#catStatus").textConte
 $("#catMore").onclick=()=>loadCat();
 async function loadCat(){$("#catStatus").textContent="⏳ Загружаю…";const q=`&cursor=${encodeURIComponent(catCursor)}`+(catAppid?`&appid=${catAppid}`:"");let r;try{r=await jget(proxy("catalog",q));}catch(e){$("#catStatus").textContent="❌ "+(e&&e.message||e);return;}if(r.error){$("#catStatus").textContent="❌ "+r.error;return;}
   const grid=$("#catGrid");(r.items||[]).forEach(it=>{const c=document.createElement("div");c.className="cat-card";c.dataset.title=(it.title||"").toLowerCase();
-    c.innerHTML=`<img loading="lazy" referrerpolicy="no-referrer" src="${it.image_url}" onerror="this.style.visibility='hidden'"><div class="cap">${esc(it.title)}<br><span class="cost">${it.point_cost} очков</span></div>`;
-    c.onclick=()=>useCat(it);grid.append(c);});
+    c.innerHTML=`<img loading="lazy" referrerpolicy="no-referrer" src="${it.image_url}" onerror="this.style.visibility='hidden'"><div class="cap">${esc(it.title)}<br><span class="cost">${it.point_cost} очков</span><button class="btn cat-pick">✓ Выбрать фон</button></div>`;
+    c.onclick=()=>useCat(it);c.querySelector('.cat-pick').onclick=(e)=>{e.stopPropagation();useCat(it);};grid.append(c);});
   catCursor=r.next_cursor;$("#catMore").disabled=!catCursor;const total=grid.children.length;
   if(catAppid&&total===0)$("#catStatus").textContent="У этой игры нет анимированных фонов. Нажмите «Сбросить».";
   else applyFilter();}
-async function useCat(it){$("#catStatus").textContent="⏳ Загружаю фон…";const url=it.movie_url||it.image_url;const blob=await fetch(proxy("img",`&url=${encodeURIComponent(url)}`)).then(x=>x.blob());await setBg(blob,!!it.movie_url,it.title);$("#catStatus").textContent="✅ Фон загружен, нарезка подстроена под профиль.";document.querySelector('.tab[data-tab="slice"]').click();}
+async function useCat(it){$("#catStatus").textContent="⏳ Загружаю фон…";const url=it.movie_url||it.image_url;const blob=await fetch(proxy("img",`&url=${encodeURIComponent(url)}`)).then(x=>x.blob());await setBg(blob,!!it.movie_url,it.title);$("#catStatus").textContent="✅ Фон применён к профилю.";document.querySelector('.tab[data-tab="profile"]').click();}
 
 // ── инструкция загрузки ──
 let guideLoaded=false;
