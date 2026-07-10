@@ -481,7 +481,9 @@ $("#catLoadBtn").onclick=()=>{if(!$("#gameSel").value){$("#catStatus").textConte
 $("#catMore").onclick=()=>loadCat();
 async function loadCat(){$("#catStatus").textContent="⏳ Загружаю…";const q=`&cursor=${encodeURIComponent(catCursor)}`+(catAppid?`&appid=${catAppid}`:"");let r;try{r=await jget(proxy("catalog",q));}catch(e){$("#catStatus").textContent="❌ "+(e&&e.message||e);return;}if(r.error){$("#catStatus").textContent="❌ "+r.error;return;}
   const grid=$("#catGrid");(r.items||[]).forEach(it=>{const c=document.createElement("div");c.className="cat-card";c.dataset.title=(it.title||"").toLowerCase();
-    c.innerHTML=`<img loading="lazy" referrerpolicy="no-referrer" src="${it.image_url}" onerror="this.style.visibility='hidden'"><div class="cap">${esc(it.title)}<br><span class="cost">${it.point_cost} очков</span><button class="btn cat-pick">✓ Выбрать фон</button></div>`;
+    const purl=proxy("img",`&url=${encodeURIComponent(it.image_url)}`);
+    // прямой CDN → при ошибке откат на прокси (надёжнее) → потом скрыть
+    c.innerHTML=`<img loading="lazy" src="${it.image_url}" data-p="${purl}" onerror="if(this.dataset.r){this.style.visibility='hidden'}else{this.dataset.r='1';this.src=this.dataset.p}"><div class="cap">${esc(it.title)}<br><span class="cost">${it.point_cost} очков</span><button class="btn cat-pick">✓ Выбрать фон</button></div>`;
     c.onclick=()=>useCat(it);c.querySelector('.cat-pick').onclick=(e)=>{e.stopPropagation();useCat(it);};grid.append(c);});
   catCursor=r.next_cursor;$("#catMore").disabled=!catCursor;const total=grid.children.length;
   if(catAppid&&total===0)$("#catStatus").textContent="У этой игры нет анимированных фонов. Нажмите «Сбросить».";

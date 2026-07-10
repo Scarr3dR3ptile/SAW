@@ -2,6 +2,20 @@
 
 Самодостаточная веб-версия для деплоя на **Vercel** без Docker и своего сервера.
 
+## ⚠️ Если «ничего не работает» после деплоя — диагностика
+Код проверен end-to-end на эмуляторе Vercel (Node 20) — все функции и флоу
+работают. Значит проблема в деплое. Открой сайт → **F12 → Network** → нажми
+«Каталог», смотри запрос `/api/proxy?action=catalog`:
+* **404** — папка `api/` не задеплоилась (проверь, что `api/proxy.js` и
+  `api/steam-auth.js` в репозитории; Vercel → Deployment → Functions = 2 шт).
+* **500** — функция падает. Vercel → Deployment → Functions → Logs. Частая
+  причина `fetch is not defined` → Node < 18 → Project Settings → **Node.js
+  Version = 20.x**.
+Проверь также `/ffmpeg/esm/ffmpeg-core.wasm` напрямую: **404** = папка `ffmpeg/`
+(~31 МБ) не залилась (закоммить в git, проверь `.gitignore`).
+**ОБЯЗАТЕЛЬНО деплой всей папки** `vercel/` целиком: `index.html`, `api/`,
+`ffmpeg/`, `package.json`, `vercel.json`.
+
 ## Файлы
 ```
 index.html            весь клиентский функционал одним файлом
