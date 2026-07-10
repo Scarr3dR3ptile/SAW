@@ -447,6 +447,16 @@ function injectShowcase(doc){
     `</div>`;
   area.prepend(w);
 }
+// HTML страницы профиля кэшируется по steamid — при смене фона Steam НЕ дёргается
+// повторно (иначе Steam режет по частоте: «too many requests»).
+const _pageCache={};
+async function getProfileHTML(sid){
+  const k=sid||"demo";
+  if(_pageCache[k])return _pageCache[k];
+  const html=await fetch(proxy("profile-page",sid?`&steamid=${sid}`:"")).then(r=>r.text());
+  if(/profile_page/.test(html)&&!/too many requests/i.test(html))_pageCache[k]=html;  // не кэшируем ошибку
+  return html;
+}
 async function renderChrome(frame,wrap,inject){
   const sid=account?account.steamid64:"";
   const bgUrl=state.bg?state.bg.url:(account?account.bg_url:"");
@@ -456,7 +466,13 @@ async function renderChrome(frame,wrap,inject){
   const doInject=()=>{const d=frame.contentDocument;if(!d)return;if(animated&&bgUrl)injectAnimatedBg(d,bgUrl);if(inject)injectShowcase(d);};
   if(frame.dataset.key!==key){
     frame.dataset.key=key;
-    const html=await fetch(proxy("profile-page",sid?`&steamid=${sid}`:"")).then(r=>r.text());
+    const html=await getProfileHTML(sid);   // из кэша по sid — фетч раз на профиль
+    if(/too many requests/i.test(html)){    // Steam ограничил частоту — не показываем сырую ошибку
+      delete frame.dataset.key;             // чтобы повторить при следующем рендере
+      frame.srcdoc=`<body style="margin:0;background:#1b2838;color:#c7d5e0;font-family:sans-serif;text-align:center;padding:60px 20px"><h2>Steam временно ограничил частоту запросов</h2><p>Подождите ~минуту и вернитесь на вкладку «Профиль» — превью появится.<br>Это ограничение Steam, не ошибка сайта. Нарезка и скачивание работают.</p></body>`;
+      $("#profileHint").textContent="⚠️ Steam ограничил частоту — подождите минуту и обновите вкладку «Профиль».";
+      return;
+    }
     frame.onload=doInject;
     frame.srcdoc=(bgUrl&&!animated)?html.replace(BG_RE,(m,a,b)=>a+bgUrl+b):html;
   }else{doInject();}   // тот же фон, изменились параметры → только пере-инъекция витрины

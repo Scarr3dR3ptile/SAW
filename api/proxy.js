@@ -17,6 +17,8 @@ const GEOMETRY = {
 
 const UA = "SCRE-SteamArtworkEditor/2.0";
 const get = (url) => fetch(url, { headers: { "User-Agent": UA } });
+// Кэш на Vercel edge (s-maxage) — Steam получает в разы меньше запросов, не режет по частоте.
+const cache = (res, s) => res.setHeader("Cache-Control", `public, s-maxage=${s}, max-age=${Math.min(s, 60)}, stale-while-revalidate=600`);
 
 export default async function handler(req, res) {
   const action = req.query.action || "";
@@ -66,6 +68,7 @@ async function catalog(req, res) {
   let cursor = req.query.cursor || "*";
   if (appid) {
     const { items, next } = await queryBackgrounds(appid, cursor);
+    cache(res, 300);
     return res.json({ items, next_cursor: next });
   }
   // общий список: анимированных ~3%, копим до ~24 за несколько страниц
@@ -76,6 +79,7 @@ async function catalog(req, res) {
     cursor = next;
     if (found.length >= 24) break;
   }
+  cache(res, 180);
   return res.json({ items: found, next_cursor: cursor });
 }
 
@@ -83,6 +87,7 @@ async function searchGames(req, res) {
   const term = req.query.term || "";
   const r = await get(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&cc=US&l=en`);
   const j = await r.json();
+  cache(res, 600);
   res.json({ games: (j.items || []).slice(0, 10).map((it) => ({ appid: it.id, name: it.name })) });
 }
 
@@ -111,7 +116,9 @@ async function profileMeta(steamid) {
 }
 
 async function profile(req, res) {
-  res.json(await profileMeta(req.query.steamid));
+  const meta = await profileMeta(req.query.steamid);
+  if (meta.avatar_url) cache(res, 300);   // кэшируем только успешно полученные
+  res.json(meta);
 }
 
 // ── фон по ссылке (Торговая площадка / Магазин очков) ──
@@ -160,6 +167,7 @@ async function profilePage(req, res) {
   const sid = req.query.steamid || req.cookies?.scre_steamid || DEMO_STEAMID;
   let bg = req.query.bg || "";
   let html = await (await get(`https://steamcommunity.com/profiles/${sid}/`)).text();
+  const valid = html.includes("profile_page") && !/too many requests/i.test(html);
   html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
   html = html.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, "");
   html = html.replace(/(href|src)="\/(?!\/)/g, '$1="https://steamcommunity.com/');
@@ -169,5 +177,9 @@ async function profilePage(req, res) {
       (m, a, b) => a + bg + b);
   }
   res.setHeader("Content-Type", "text/html; charset=utf-8");
+  // Кэшируем только НОРМАЛЬНУЮ страницу (не rate-limit «too many requests»),
+  // иначе на 5 минут закэшируем ошибку. Демо-профиль общий → кэш очень помогает.
+  if (valid) res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+  else res.setHeader("Cache-Control", "no-store");
   res.send(html);
 }
